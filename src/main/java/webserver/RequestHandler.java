@@ -15,12 +15,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class RequestHandler extends Thread {
-    private static final Logger log = LoggerFactory.getLogger(RequestHandler.class);
 
+    private static final Logger log = LoggerFactory.getLogger(RequestHandler.class);
+    private final ResponseHandler responseHandler;
     private Socket connection;
+
+    public static final String SPACE = " ";
+    public static final String WEBAPP = "./webapp";
 
     public RequestHandler(Socket connectionSocket) {
         this.connection = connectionSocket;
+        this.responseHandler = new ResponseHandler();
     }
 
     public void run() {
@@ -28,57 +33,41 @@ public class RequestHandler extends Thread {
                 connection.getPort());
 
         try (InputStream in = connection.getInputStream(); OutputStream out = connection.getOutputStream()) {
-            // TODO 사용자 요청에 대한 처리는 이 곳에 구현하면 된다.
             BufferedReader reader = new BufferedReader(new InputStreamReader(in));
-            ArrayList<String> headers = new ArrayList<>();
-            String line = reader.readLine();
-            headers.add(line);
 
-            if (line == null) {
-                return;
-            }
-
-            while(!"".equals(line)) {
-                line = reader.readLine();
-                log.debug("header: {}", line);
-                headers.add(line);
-            }
-
-            String[] tokens = headers.getFirst().split(" ");
-
-            String url = tokens[1];
-            log.debug("Request Rescoure: {}", url);
+            ArrayList<String> headers = parseHeader(reader);
+            String resource = getResourceByRequestHeaderFirstLine(headers);
 
             DataOutputStream dos = new DataOutputStream(out);
-//            byte[] body = "Hello World".getBytes();
-            Path path = new File("./webapp" + url).toPath();
+            Path path = new File(WEBAPP + resource).toPath();
             log.debug("Resource Path: {}", path);
 
             byte[] body = Files.readAllBytes(path);
-            response200Header(dos, body.length);
-            responseBody(dos, body);
+            responseHandler.response200Header(dos, body);
+            responseHandler.responseBody(dos, body);
         } catch (IOException e) {
             log.error(e.getMessage());
         }
     }
 
-    private void response200Header(DataOutputStream dos, int lengthOfBodyContent) {
-        try {
-            dos.writeBytes("HTTP/1.1 200 OK \r\n");
-            dos.writeBytes("Content-Type: text/html;charset=utf-8\r\n");
-            dos.writeBytes("Content-Length: " + lengthOfBodyContent + "\r\n");
-            dos.writeBytes("\r\n");
-        } catch (IOException e) {
-            log.error(e.getMessage());
-        }
+    private static String getResourceByRequestHeaderFirstLine(ArrayList<String> headers) {
+        String[] tokens = headers.getFirst().split(SPACE);
+        String url = tokens[1];
+        log.debug("Request Rescoure: {}", url);
+        return url;
     }
 
-    private void responseBody(DataOutputStream dos, byte[] body) {
-        try {
-            dos.write(body, 0, body.length);
-            dos.flush();
-        } catch (IOException e) {
-            log.error(e.getMessage());
+    private static ArrayList<String> parseHeader(BufferedReader reader) throws IOException {
+        ArrayList<String> headers = new ArrayList<>();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (line.isEmpty()) {
+                break;
+            }
+
+            headers.add(line);
+            log.debug("header: {}", line);
         }
+        return headers;
     }
 }
